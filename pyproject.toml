@@ -1,0 +1,31 @@
+[project]
+name = "detection"
+version = "0.1.0"
+description = "Detecção de Objetos com YOLO e ROCm"
+readme = "README.md"
+authors = [
+    { name = "José Anselmo", email = "anselmojose297@gmail.com" }
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "torch",
+    "torchvision",
+    "amd-torch-device-gfx1102",
+    "amd-torchvision-device-gfx1102",
+    "ultralytics>=8.4.190",
+    "pyserial>=3.5",
+    "onnxruntime>=1.31.1",
+    "opencv-python-headless>=5.0.0.93",
+]
+
+[project.scripts]
+detection = "detection:main"
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+index-strategy = "unsafe-best-match"
+extra-index-url = ["https://repo.amd.com/rocm/whl-multi-arch/"]
