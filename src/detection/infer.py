@@ -1,9 +1,10 @@
+from detection.config import WEIGHTS_PATH
 from collections import deque
 
 import serial
 from ultralytics import YOLO
 
-model = YOLO("/home/jos/Desktop/Machine Learning/Deep Learning/YOLO/Detecção/runs/detect/experimentos/detector_v1-2/weights/best.pt")
+model = YOLO(WEIGHTS_PATH)
 
 buffer = deque(maxlen=60)
 has_fire_previous_value = False
