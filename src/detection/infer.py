@@ -4,7 +4,7 @@ from collections import deque
 import serial
 from ultralytics import YOLO
 
-model = YOLO(WEIGHTS_PATH)
+model = YOLO("yolov8s-seg.pt")
 
 buffer = deque(maxlen=60)
 has_fire_previous_value = False
@@ -39,13 +39,18 @@ def on_undetected():
     relay.close()
 
 
-for result in model.predict(
+for result in model.track(
     source=1,
+    persist=True,
+    tracker="bytetrack.yaml",
     stream=True,
     show=True,
     verbose=False,
 ):
     frame_has_fire = False
+
+    print(model.predictor.trackers[0])
+
 
     for box_index, box in enumerate(result.boxes):
         if result.names[int(box.cls[0])] == "Fogo":

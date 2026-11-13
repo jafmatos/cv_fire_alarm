@@ -623,3 +623,376 @@ if __name__ == "__main__":
         for det in resultados:
             print(f" -> {det['classe']} ({det['confianca']:.1%}) em {det['caixa']}")
 ```
+
+---
+
+## 7. Rastreamento de Múltiplos Objetos (MOT) com ByteTrack
+
+Na detecção de objetos padrão (`model.predict`), cada quadro de vídeo é processado como uma foto estática e independente. O modelo detecta onde os objetos estão no instante $t$, mas não possui memória do instante $t-1$.
+
+O **Rastreamento de Múltiplos Objetos (Multi-Object Tracking - MOT)** resolve esse problema atribuindo uma **identidade única e persistente (`track_id`)** a cada instância ao longo de toda a sua permanência no vídeo.
+
+```mermaid
+graph LR
+    subgraph "Detecção Pura (Quadro a Quadro)"
+        D1["Frame 1: Caixa [100, 150] (Sem ID)"]
+        D2["Frame 2: Caixa [105, 152] (Sem ID)"]
+        D3["Frame 3: Caixa [110, 155] (Sem ID)"]
+    end
+
+    subgraph "MOT com ByteTrack (Associação Temporal)"
+        T1["Frame 1: Objeto ID #42"] -->|Filtro de Kalman + IoU| T2["Frame 2: Objeto ID #42"]
+        T2 -->|Filtro de Kalman + IoU| T3["Frame 3: Objeto ID #42"]
+    end
+```
+
+---
+
+### 7.1 Por que a Detecção Pura Falha em Vídeos?
+
+Em fluxos contínuos de vídeo, confiar apenas em `model.predict()` gera três problemas severos:
+
+1. **Ausência de Continuidade Espaço-Temporal:**
+   Sem um identificador persistente, é matematicamente impossível calcular métricas dinâmicas como **velocidade vetorial**, **direção de deslocamento**, **tempo de permanência** ou realizar a **contagem de objetos únicos** que cruzam uma linha sem recontar o mesmo objeto dezenas de vezes por segundo.
+2. **Intermitência por Oclusão Momentânea:**
+   Se um objeto passa atrás de um poste, árvore ou outra entidade por alguns quadros, o detector deixará de localizá-lo temporariamente. Quando ele reaparecer, um detector comum o tratará como uma entidade completamente inédita.
+3. **Flutuação de Confiança (Motion Blur / Iluminação):**
+   Movimentos bruscos de câmera ou do objeto geram borrões transitórios (*motion blur*). Nesses quadros, a confiança da rede neural pode despencar de $0.85$ para $0.25$, caindo abaixo do limiar de corte tradicional e fragmentando a trajetória.
+
+---
+
+### 7.2 O Paradigma Tracking-by-Detection
+
+O MOT moderno opera majoritariamente sob o paradigma **Tracking-by-Detection**:
+
+```mermaid
+flowchart TD
+    Frame["Quadro de Vídeo Atual (t)"] --> Detector["Detector (ex: YOLO)<br/>Extrai Caixas Candidatas"]
+    Detector --> ConfFilter["Divisão por Confiança<br/>(Alta vs Baixa)"]
+    Kalman["Filtro de Kalman<br/>Prediz Posições no instante t"] --> Assoc["Associação Linear Ótima<br/>(Matriz IoU + Algoritmo Húngaro)"]
+    ConfFilter --> Assoc
+    Assoc --> Tracks["Atualização das Trajetórias<br/>(IDs Persistentes)"]
+```
+
+Nesse paradigma, o modelo neural (YOLO) é responsável exclusivamente pela **percepção visual** (achar as caixas no quadro), enquanto um algoritmo separado (como o **ByteTrack**) é responsável pela **associação temporal e cinemática** (conectar as caixas entre quadros consecutivos).
+
+---
+
+### 7.3 A Inovação do ByteTrack: Por que ele superou SORT e DeepSORT?
+
+Até a publicação do ByteTrack (*Zhang et al., 2022*), a maioria dos algoritmos clássicos de rastreamento utilizava um único limiar rígido de confiança:
+
+* Se um objeto tivesse confiança $\ge 0.60$, ele era enviado para a associação.
+* Se a confiança caísse para $0.59$ (devido a oclusão parcial, sombra ou desfoque), **ele era sumariamente descartado antes do rastreador ver a caixa**.
+
+Essa prática causava frequentes perdas de rastro (*track fragmentation*) e trocas de identidade (*ID switches*).
+
+#### A Sacada Central: Associação em Dois Estágios (*Two-Stage Association*)
+
+O ByteTrack parte de uma observação simples e poderosa: **mesmo detecções com baixa confiança contêm pistas espaciais valiosas sobre a presença de objetos em oclusão.**
+
+Em vez de descartar caixas fracas, o ByteTrack divide as detecções em duas categorias e realiza a associação em duas etapas hierárquicas:
+
+```mermaid
+flowchart TD
+    Dets["Todas as Detecções do YOLO"] --> Split{"Confiança da Caixa"}
+    Split -->|conf >= track_high_thresh| DHigh["Detections High (D_high)<br/>Alta Confiança"]
+    Split -->|track_low_thresh <= conf < track_high_thresh| DLow["Detections Low (D_low)<br/>Baixa Confiança"]
+
+    TracksActive["Rastros Ativos Atuais<br/>(Posição predita via Kalman)"] --> Stage1["1º Estágio de Associação<br/>(D_high vs Rastros Ativos)"]
+    DHigh --> Stage1
+
+    Stage1 --> Matched1["Rastros Mantidos & Atualizados"]
+    Stage1 --> UnmatchedTracks["Rastros Não Associados<br/>(Possivelmente Ocluídos)"]
+    Stage1 --> UnmatchedDHigh["Detecções D_high Sobrando"]
+
+    UnmatchedTracks --> Stage2["2º Estágio de Associação<br/>(D_low vs Rastros Não Associados)"]
+    DLow --> Stage2
+
+    Stage2 --> Matched2["Rastros Recuperados da Oclusão!"]
+    Stage2 --> LostTracks["Rastros Perdidos (Lost)<br/>Aguardam no buffer"]
+  
+    UnmatchedDHigh --> NewTracks["Inicia Novos Rastros<br/>(Se conf >= new_track_thresh)"]
+```
+
+1. **Primeira Associação ($D_{high}$):**
+   Associa as detecções de alta certeza com as trajetórias existentes usando sobreposição espacial (IoU). A maioria dos objetos visíveis e desobstruídos é correspondida aqui.
+2. **Segunda Associação ($D_{low}$):**
+   Para os rastros existentes que **não** encontraram par na primeira fase (geralmente porque o objeto entrou atrás de um obstáculo ou ficou borrado), o ByteTrack tenta associá-los com as detecções de **baixa confiança**.
+   * Se der *match*, o rastro é preservado sem troca de ID!
+   * Caixas de $D_{low}$ que sobrarem sem correspondência são tratadas como ruído de fundo e eliminadas.
+
+Essa estratégia simples aumentou significativamente a acurácia de rastreamento (métrica MOTA / HOTA) e reduziu drasticamente os *ID switches* sem adicionar modelos pesados de extração de características visuais (ReID).
+
+---
+
+### 7.4 Os Pilares Teóricos do Rastreamento
+
+Para que o ByteTrack funcione em alta velocidade (acima de $100$ FPS na CPU), ele se apoia em dois fundamentos clássicos da engenharia:
+
+#### 1. Filtro de Kalman (Cinemática do Objeto)
+
+O Filtro de Kalman modela o movimento de cada caixa como um sistema dinâmico linear sujeito a ruído gaussiano. O estado interno de cada rastro é representado por um vetor de 8 dimensões:
+
+$$
+\mathbf{x} = [x, y, a, h, v_x, v_y, v_a, v_h]^T
+$$
+
+Onde:
+
+* $(x, y)$: Coordenadas do ponto central da caixa delimitadora.
+* $a = \frac{w}{h}$: Proporção de aspecto (*aspect ratio*).
+* $h$: Altura da caixa delimitadora.
+* $v_x, v_y, v_a, v_h$: Respectivas velocidades lineares de variação no tempo.
+
+O algoritmo opera em dois passos contínuos a cada quadro:
+
+* **Previsão (*Predict*):** Antes de olhar as novas detecções do frame atual, o filtro projeta onde a caixa deveria estar com base na velocidade calculada até o quadro anterior.
+* **Atualização (*Update*):** Ao associar a previsão com uma caixa real observada pelo detector, o filtro combina as duas informações ponderadas por suas matrizes de covariância (incerteza), corrigindo a trajetória.
+
+#### 2. Matriz de Custo de IoU e Algoritmo Húngaro
+
+Para decidir qual caixa detectada pertence a qual rastro previsto, calcula-se uma matriz de custo bidimensional baseada na métrica **$1 - \text{IoU}$** (*Intersection over Union*):
+
+$$
+\text{Custo}_{i, j} = 1 - \text{IoU}(\text{RastroPredito}_i, \text{Deteccao}_j)
+$$
+
+Em seguida, o **Algoritmo Húngaro** (*Linear Sum Assignment*) encontra a combinação global 1-para-1 que minimiza o custo total de associação em tempo polinomial $O(N^3)$, com um limiar de corte (`match_thresh`) para rejeitar associações fisicamente implausíveis.
+
+---
+
+### 7.5 Ciclo de Vida de uma Trajetória (Estados do Track)
+
+Cada objeto rastreado transita por quatro estados bem definidos:
+
+```mermaid
+stateDiagram-v2
+    [*] --> New: Detecção D_high não associada
+    New --> Tracked: Confirmado em quadros consecutivos
+    New --> Removed: Falso positivo isolado
+    Tracked --> Tracked: Associação bem-sucedida (D_high ou D_low)
+    Tracked --> Lost: Nenhuma associação encontrada no frame
+    Lost --> Tracked: Reassociado com sucesso
+    Lost --> Removed: Permaneceu perdido por > track_buffer frames
+    Removed --> [*]
+```
+
+* **`New` (Novo):** Criado quando uma detecção $D_{high}$ não coincide com nenhum rastro existente. O tracker ainda não o expõe imediatamente como confirmado; ele aguarda consistência no quadro seguinte para evitar falsos positivos espúrios.
+* **`Tracked` (Ativo):** Rastro consolidado e em acompanhamento contínuo.
+* **`Lost` (Perdido):** Quando o objeto não foi localizado no quadro atual. O Filtro de Kalman mantém a estimativa de posição "às cegas" durante esse período.
+* **`Removed` (Destruído):** Se o rastro ficar em estado `Lost` por uma quantidade de quadros superior ao `track_buffer`, a memória dele é liberada e o ID é desativado.
+
+---
+
+### 7.6 Anatomia e Calibração do `bytetrack.yaml`
+
+A biblioteca Ultralytics inclui o arquivo de configuração padrão do ByteTrack. Você pode utilizá-lo diretamente (`tracker="bytetrack.yaml"`) ou criar seu próprio arquivo `.yaml` customizado:
+
+```yaml
+# Configuração Padrão: bytetrack.yaml
+tracker_type: bytetrack # Identificador do rastreador
+
+# Limiares de Detecção
+track_high_thresh: 0.5  # Limiar para D_high (1º estágio de associação)
+track_low_thresh: 0.1   # Limiar para D_low (2º estágio, resgate de oclusões)
+new_track_thresh: 0.6   # Confiança mínima para inicializar uma nova trajetória
+
+# Persistência Temporal
+track_buffer: 30        # Quantidade de quadros que um rastro 'Lost' é mantido vivo
+match_thresh: 0.8       # Limiar mínimo de IoU (custo <= 0.8) para aceitar correspondência
+fuse_score: True        # Funde o score de detecção na matriz de similaridade
+```
+
+#### Guia Prático de Ajuste de Hiperparâmetros
+
+| Parâmetro                      | Quando Aumentar?                                                                                              | Quando Diminuir?                                                                                                         |
+| :------------------------------ | :------------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------------------------------------- |
+| **`track_high_thresh`** | Se houver muito ruído de fundo gerando trajetórias falsas.                                                  | Se objetos legítimos estiverem demorando para começar a ser rastreados.                                                |
+| **`track_low_thresh`**  | Se o detector tiver muitos falsos positivos com confiança baixa.                                             | Se objetos parcialmente encobertos estiverem perdendo o rastro com frequência.                                          |
+| **`track_buffer`**      | Em câmeras com $30$ a $60$ FPS onde objetos ficam ocluídos por vários segundos (ex: 60 ou 90 quadros). | Em câmeras com poucos FPS ($5$ a $10$ FPS) ou para liberar memória imediatamente quando o objeto sai da cena.      |
+| **`match_thresh`**      | Se objetos se movem devagar e caixas consecutivas têm sobreposição quase perfeita.                         | Se objetos se movem em altíssima velocidade ou a taxa de FPS for baixa (onde o salto espacial entre quadros é grande). |
+
+---
+
+### 7.7 Implementação Prática com a API Ultralytics
+
+O método nativo para acionar o ByteTrack no ecossistema Ultralytics é o **`model.track()`**.
+
+> [!IMPORTANT]
+> **Diferença Crítica entre `model.predict()` e `model.track()`:**
+> O método `model.track()` inicializa e preserva o estado dos rastreadores internos. Em loops manuais de vídeo com OpenCV, o parâmetro **`persist=True`** é obrigatório para que o rastreador não reinicie do zero a cada quadro.
+
+#### Exemplo 1: Rastreamento com Histórico Visual de Trajetória
+
+Este script processa um fluxo de vídeo, extrai o `track_id` único de cada objeto e desenha a linha contínua do percurso percorrido (*motion trail*):
+
+```python
+"""
+rastreamento_trajetoria.py
+Exemplo genérico de rastreamento de múltiplos objetos com histórico visual de percurso.
+"""
+from collections import defaultdict
+import cv2
+import numpy as np
+from ultralytics import YOLO
+
+# 1. Carrega modelo pré-treinado geral (ex: COCO 80 classes)
+modelo = YOLO("yolov8n.pt")
+
+# 2. Estrutura para armazenar o histórico dos últimos pontos centrais de cada ID
+# defaultdict cria automaticamente uma lista vazia quando um novo track_id surge
+historico_trajetoria = defaultdict(lambda: [])
+
+# 3. Ingestão de vídeo com OpenCV
+caminho_video = "video_exemplo.mp4"
+cap = cv2.VideoCapture(caminho_video)
+
+while cap.isOpened():
+    sucesso, frame = cap.read()
+    if not sucesso:
+        break
+
+    # Executa rastreamento com ByteTrack preservando o estado entre iterações
+    resultados = modelo.track(
+        source=frame,
+        persist=True,               # Mantém a memória dos rastros entre chamadas
+        tracker="bytetrack.yaml",    # Algoritmo ByteTrack
+        conf=0.4,                   # Limiar geral de corte prévio
+        verbose=False
+    )
+
+    # Verifica se alguma detecção recebeu um track_id válido
+    if resultados[0].boxes is not None and resultados[0].boxes.id is not None:
+        caixas = resultados[0].boxes.xyxy.int().cpu().tolist()
+        ids = resultados[0].boxes.id.int().cpu().tolist()
+        classes = resultados[0].boxes.cls.int().cpu().tolist()
+
+        for caixa, track_id, cls_id in zip(caixas, ids, classes):
+            x1, y1, x2, y2 = caixa
+            nome_classe = modelo.names[cls_id]
+
+            # Ponto central da base do objeto (pés ou base de apoio)
+            centro_x = int((x1 + x2) / 2)
+            centro_y = int(y2)
+
+            # Adiciona ao histórico do ID específico (mantendo últimos 30 pontos)
+            trajetoria = historico_trajetoria[track_id]
+            trajetoria.append((centro_x, centro_y))
+            if len(trajetoria) > 30:
+                trajetoria.pop(0)
+
+            # Desenha a caixa delimitadora e o ID persistente
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            rotulo = f"ID #{track_id} {nome_classe}"
+            cv2.putText(frame, rotulo, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+            # Desenha a linha da trajetória conectando os pontos históricos
+            pontos = np.array(trajetoria, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.polylines(frame, [pontos], isClosed=False, color=(0, 200, 255), thickness=2)
+
+    cv2.imshow("ByteTrack - Rastreamento e Trajetoria", frame)
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+---
+
+#### Exemplo 2: Linha de Contagem Bidirecional de Objetos Únicos (*Virtual Tripwire*)
+
+Uma das aplicações mais clássicas de MOT é a contagem de fluxo sem duplicidades (ex: pedestres em passagens, veículos em rodovias, pacotes em esteiras) mesmo que o objeto desacelere ou pare sobre a linha:
+
+```python
+"""
+contagem_linha_virtual.py
+Contador de fluxo bidirecional utilizando IDs persistentes do ByteTrack.
+"""
+import cv2
+from ultralytics import YOLO
+
+modelo = YOLO("yolov8n.pt")
+cap = cv2.VideoCapture("fluxo_video.mp4")
+
+# Posição Y da linha de contagem virtual
+LINHA_Y = 400
+
+# Estruturas de controle de estado
+historico_posicoes = {}   # track_id -> último Y observado
+ids_contados_descendo = set()
+ids_contados_subindo = set()
+
+while cap.isOpened():
+    sucesso, frame = cap.read()
+    if not sucesso:
+        break
+
+    resultados = modelo.track(
+        source=frame,
+        persist=True,
+        tracker="bytetrack.yaml",
+        conf=0.35,
+        verbose=False
+    )
+
+    # Desenha a linha de referência no quadro
+    cv2.line(frame, (0, LINHA_Y), (frame.shape[1], LINHA_Y), (0, 0, 255), 2)
+
+    if resultados[0].boxes is not None and resultados[0].boxes.id is not None:
+        caixas = resultados[0].boxes.xyxy.int().cpu().tolist()
+        ids = resultados[0].boxes.id.int().cpu().tolist()
+
+        for caixa, track_id in zip(caixas, ids):
+            x1, y1, x2, y2 = caixa
+            centro_y = int((y1 + y2) / 2)
+
+            # Se já conhecemos a posição anterior deste ID, avaliamos o cruzamento
+            if track_id in historico_posicoes:
+                y_anterior = historico_posicoes[track_id]
+
+                # Cruzou a linha de cima para baixo
+                if y_anterior < LINHA_Y and centro_y >= LINHA_Y:
+                    if track_id not in ids_contados_descendo:
+                        ids_contados_descendo.add(track_id)
+
+                # Cruzou a linha de baixo para cima
+                elif y_anterior > LINHA_Y and centro_y <= LINHA_Y:
+                    if track_id not in ids_contados_subindo:
+                        ids_contados_subindo.add(track_id)
+
+            # Atualiza a última posição conhecida do objeto
+            historico_posicoes[track_id] = centro_y
+
+            # Renderiza caixa e identificador
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 100, 0), 2)
+            cv2.putText(frame, f"ID: {track_id}", (x1, y1 - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 100, 0), 2)
+
+    # Exibe placar de contagem na tela
+    cv2.putText(frame, f"Descendo: {len(ids_contados_descendo)}", (30, 40),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+    cv2.putText(frame, f"Subindo:  {len(ids_contados_subindo)}", (30, 80),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+
+    cv2.imshow("Monitoramento de Fluxo - Linha Virtual", frame)
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+---
+
+### 7.8 Resumo Comparativo: Detecção Simples vs. ByteTrack
+
+| Critério                                | `model.predict()` (Detecção Pura)                  | `model.track(tracker='bytetrack.yaml')`                                     |
+| :--------------------------------------- | :----------------------------------------------------- | :---------------------------------------------------------------------------- |
+| **Entrada Típica**                | Imagens estáticas ou frames desacoplados.             | Fluxos sequenciais de vídeo (câmera, RTSP, arquivo).                        |
+| **Identidade de Instâncias**      | Nenhuma (`box.id` é `None`).                      | Atribui ID numérico único e contínuo (`box.id`).                         |
+| **Resistência a Oclusões**       | Nenhuma; se sumir em 1 frame, a detecção é perdida. | Tolera até `track_buffer` frames de oclusão via Filtro de Kalman.         |
+| **Tratamento de Confiança Fraca** | Caixas abaixo do limiar são simplesmente descartadas. | $D_{low}$ é reaproveitado para recuperar trajetórias sob ruído/oclusão. |
+| **Custo Computacional Adicional**  | $0$ ms adicionais.                                   | Quase desprezível ($< 2$ ms por quadro na CPU).                            |
+| **Casos de Uso Ideais**            | Reconhecimento de classes em fotos isoladas.           | Contagem de fluxo, análise de velocidade, percurso e permanência.           |

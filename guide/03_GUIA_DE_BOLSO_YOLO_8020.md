@@ -41,7 +41,7 @@
 | **Auto-Crop de evidência** | `crop = frame[y1:y2, x1:x2]; cv2.imwrite("fogo.jpg", crop)` | Recorta apenas a chama/fumaça para auditoria forense ou alerta via webhook. |
 | **Cerca Virtual / Zonas de Risco** | `cv2.pointPolygonTest(poligono, (xc, yc), False) >= 0` | Ignora fumaça esperada em caldeiras e monitora apenas áreas inflamáveis. |
 | **Persistência Anti-Alarme Falso**| `buffer = deque(maxlen=30); if sum(buffer) > 20: sirene()` | Impede que a sirene física de 12V dispare por causa de um único frame de ruído. |
-| **Rastrear expansão de fogo** | `model.track(source="video.mp4", tracker="bytetrack.yaml")` | Atribui ID persistente a cada foco e permite calcular a taxa de crescimento da área. |
+| **Rastreamento de Objetos (MOT)** | `model.track(source="video.mp4", tracker="bytetrack.yaml")` | Atribui ID persistente e único a cada objeto ao longo do tempo (ByteTrack). |
 
 ---
 

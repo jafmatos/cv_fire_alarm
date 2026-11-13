@@ -29,7 +29,7 @@
 ┌────────────────────────────────────────────────────────────────────────┐
 │  🚀 ETAPA 2: Treinamento e Inferência Profissional                     │
 │     • Guia 02: [Treinamento, Inferência e Deploy com Ultralytics](02_TREINAMENTO_E_INFERENCIA_ULTRALYTICS.md)
-│       Transfer learning com modelos Nano/Small, métricas e exportação  │
+│       Transfer learning, métricas, rastreamento MOT (ByteTrack) e exportação  │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼

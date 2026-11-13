@@ -1,4 +1,5 @@
 import collections
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -195,12 +196,13 @@ def load_model(model_path: Path | str) -> InferenceSession:
 
 def monitor_video_capture(
     video_source,
-    temporal_filter: TemporalFilter,
-    validate_matches: Callable[[list[OutputRow]], bool],
     frame_processor: FrameProcessor,
+    target_class_index: int,
+    target_minimum_coverage: float,
+    temporal_filter: TemporalFilter,
     on_detected: Callable[[list[OutputRow]], None],
     on_not_detected: Callable[[], None],
-    on_exception: Callable[[Exception], None],
+    on_exception: Callable[[Exception], None], 
     show=False,
 ):
     is_object_detected_current_value: bool = False
@@ -247,20 +249,25 @@ def monitor_video_capture(
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
 
-            frame_matches = validate_matches(output)
-            temporal_filter.append(frame_matches)
+            target_object_output_rows = list(filter(lambda row: row.class_index == target_class_index, output))
+            is_object_in_frame = len(target_object_output_rows) > 0
+
+            total_target_object_coverage = sum(row.mask_coverage for row in target_object_output_rows)
+            object_has_minimum_coverage = total_target_object_coverage >= target_minimum_coverage
+
+            temporal_filter.append(is_object_in_frame and object_has_minimum_coverage)
 
             if not temporal_filter.is_full:
                 continue
 
-            is_object_detected = temporal_filter.validate()
+            is_object_consistently_detected = temporal_filter.validate()
 
-            if not is_object_detected_current_value and is_object_detected:
+            if not is_object_detected_current_value and is_object_consistently_detected:
                 is_object_detected_current_value = True
 
                 temporal_filter.clear()
                 on_detected(output)
-            elif is_object_detected_current_value and not is_object_detected:
+            elif is_object_detected_current_value and not is_object_consistently_detected:
                 is_object_detected_current_value = False
 
                 temporal_filter.clear()
@@ -277,16 +284,18 @@ ONNX_MODEL_PATH = "/home/jos/Desktop/Machine Learning/Deep Learning/YOLO/Detecç
 CLASS_NAMES = {0: "Fogo", 1: "Fumaça"}
 TARGET_DETECTION_CLASS_INDEX = 0
 
-VIDEO_SOURCE = 1
+VIDEO_SOURCE = "http://192.168.1.26:81/stream"
 IMAGE_SIZE = 640
 
 MINIMUM_CONFIDENCE = 0.7
 MINIMUM_IOU = 0.5
 
-DEQUE_MAX_LENGTH = 60
-DEQUE_THRESHOLD = 0.5
+DETECT_DEQUE_MAX_LENGTH = 60
+DETECT_DEQUE_THRESHOLD = 0.5
 
-RELAY_PORT = "/dev/ttyUSB0"
+TARGET_MINIMUM_COVERAGE = 0.005
+
+RELAY_PORT = "/dev/ttyUSB1"
 
 
 class RelayController:
@@ -321,17 +330,21 @@ def on_detected(output: list[OutputRow]):
     for row in output:
         if row.class_index != TARGET_DETECTION_CLASS_INDEX:
             continue
-    
+
         total_fire_coverage += row.mask_coverage
         total_fire_instances += 1
 
-    mean_fire_coverage = total_fire_coverage / total_fire_instances if total_fire_instances > 0 else 0
+    mean_fire_coverage = (
+        total_fire_coverage / total_fire_instances if total_fire_instances > 0 else 0
+    )
 
-    print(f"Fogo detectado e cobrindo {mean_fire_coverage:.2%} da cobertura da imagem de vídeo")
-    
+    print(
+        f"Fogo detectado e cobrindo {mean_fire_coverage:.2%} da cobertura da imagem de vídeo"
+    )
+
 
 def on_not_detected():
-    relay_controller.deactivate()
+    relay_controller.deactivate()    
 
 
 if __name__ == "__main__":
@@ -342,20 +355,19 @@ if __name__ == "__main__":
         min_confidence=MINIMUM_CONFIDENCE,
         min_iou=MINIMUM_IOU,
         class_names=CLASS_NAMES,
-        on_exception=lambda exception: print(f"Falha ao processar frame {exception}")
+        on_exception=lambda exception: print(f"Falha ao processar frame {exception}"),
     )
 
     temporal_filter = TemporalFilter(
-        deque_length=DEQUE_MAX_LENGTH, threshold=DEQUE_THRESHOLD
+        deque_length=DETECT_DEQUE_MAX_LENGTH, threshold=DETECT_DEQUE_THRESHOLD
     )
 
     monitor_video_capture(
         video_source=VIDEO_SOURCE,
         frame_processor=frame_processor,
         temporal_filter=temporal_filter,
-        validate_matches=lambda output: any(
-            d.class_index == TARGET_DETECTION_CLASS_INDEX for d in output
-        ),
+        target_class_index = TARGET_DETECTION_CLASS_INDEX,
+        target_minimum_coverage=TARGET_MINIMUM_COVERAGE,
         on_detected=on_detected,
         on_not_detected=on_not_detected,
         on_exception=lambda exception: print(f"Falha ao monitorar vídeo: {exception}"),
