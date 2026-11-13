@@ -1,4 +1,5 @@
 *.pt
+logs/*
 data/**/*
 input/*
 output/*
