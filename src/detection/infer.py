@@ -1,63 +1,49 @@
+import numpy as np
+from ultralytics.engine.results import Masks
+import cv2
+from detection.config import OUTPUT_DIR
+from detection.config import INPUT_DIR
 from detection.config import WEIGHTS_PATH
-from collections import deque
 
-import serial
 from ultralytics import YOLO
 
-model = YOLO("yolov8s-seg.pt")
+model = YOLO(WEIGHTS_PATH)
 
-buffer = deque(maxlen=60)
-has_fire_previous_value = False
-has_fire_current_value = False
-
-def verify_detection(buffer: deque):
-    global has_fire_previous_value
-
-    if sum(buffer) >= 40:
-        has_fire_current_value = True
-    else:
-        has_fire_current_value = False
-
-    if not has_fire_previous_value and has_fire_current_value:
-        on_detected()
-
-    elif has_fire_previous_value and not has_fire_current_value:
-        on_undetected()
-
-    has_fire_previous_value = has_fire_current_value
-
-
-def on_detected():
-    relay = serial.Serial("/dev/ttyUSB0", 9600)
-    relay.write(b"\xA0\x01\x01\xA2")
-    relay.close()
-
-
-def on_undetected():
-    relay = serial.Serial("/dev/ttyUSB0", 9600)
-    relay.write(b"\xA0\x01\x00\xA1")
-    relay.close()
-
-
-for result in model.track(
-    source=1,
-    persist=True,
-    tracker="bytetrack.yaml",
-    stream=True,
-    show=True,
+results = model.predict(
+    source=INPUT_DIR,
     verbose=False,
-):
-    frame_has_fire = False
+    conf=0.5,
+    save=True,
+    project=OUTPUT_DIR,
+    name="infer",
+    exist_ok=True,
+)
 
-    print(model.predictor.trackers[0])
+for result in results:
+    original_height, original_width = result.orig_shape
 
+    for index, box in enumerate(result.boxes):
+        x1, y1, x2, y2 = box.xyxy[0].int().tolist()
 
-    for box_index, box in enumerate(result.boxes):
-        if result.names[int(box.cls[0])] == "Fogo":
-            frame_has_fire = True
+        class_id = int(box.cls[0])
+        class_name = result.names[class_id]
 
-            break
+        confidence = float(box.conf[0])
 
-    buffer.append(frame_has_fire)
+        mask = result.masks[index].data[0].cpu().numpy()
+        mask_scaled = cv2.resize(mask, (original_width, original_height))
+        mask_binary = (mask_scaled > 0.5).astype(int)
 
-    verify_detection(buffer)
+        total_image_pixels = original_width * original_height
+
+        coverage = np.count_nonzero(mask_binary) / total_image_pixels
+
+        print(
+            f"""
+-> {class_name}
+   Confiança: {confidence:.2%}
+   Dimensões: {x2 - x1}x{y2 - y1}
+   Coordenadas: {x1, y1, x2, y2}
+   Cobertura: {coverage:.2%}
+"""
+        )

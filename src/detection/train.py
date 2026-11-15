@@ -12,8 +12,8 @@ from detection.config import (
     DATASET_YAML,
     IMAGE_SIZE,
     NUM_EPOCHS,
-    TRAIN_NAME,
-    TRAIN_PROJECT,
+    TRAIN_DIRNAME,
+    PROJECT_DIR,
 )
 
 
@@ -29,8 +29,8 @@ def train():
         workers=NUM_WORKERS,
         device=DEVICE,
         save_period=SAVE_PERIOD,
-        project=str(TRAIN_PROJECT),
-        name=TRAIN_NAME,
+        project=str(PROJECT_DIR),
+        name=TRAIN_DIRNAME,
         optimizer=OPTIMIZER,
         exist_ok=EXIST_OK,
         save=True,
