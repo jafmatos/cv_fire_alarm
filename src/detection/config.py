@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 PROJECT_DIR = ROOT_DIR / "runs"
-TRAIN_DIRNAME = "fire_alarm_v2"
+TRAIN_DIRNAME = "fire_alarm_v4"
 
 WEIGHTS_PATH = PROJECT_DIR / TRAIN_DIRNAME / "weights" / "best.pt"
 DATASET_YAML = ROOT_DIR / "data.yaml"

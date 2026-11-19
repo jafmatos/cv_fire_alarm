@@ -1,0 +1,7 @@
+CompileFlags:
+  CompilationDatabase: pio_siren
+  Add:
+    - -I/home/jos/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src
+    - -I/home/jos/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src
+    - -I/home/jos/.platformio/packages/framework-arduinoespressif32/cores/esp32
+    - -I/home/jos/.platformio/packages/framework-arduinoespressif32/variants/doitESP32devkitV1

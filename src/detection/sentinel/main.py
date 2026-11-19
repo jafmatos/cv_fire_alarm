@@ -1,3 +1,4 @@
+from detection.sentinel.actuator_controller import ActuatorController
 import traceback
 from detection.sentinel.config import IMAGE_SIZE
 from detection.sentinel.logger import logger
@@ -14,7 +15,7 @@ from detection.sentinel.config import (
     MINIMUM_CONFIDENCE,
     ONNX_MODEL_PATH,
     TARGET_DETECTION_CLASS_INDEX,
-    RELAY_PORT,
+    # RELAY_PORT,
     RETRY_COUNT,
     RETRY_INTERVAL_SECONDS,
 )
@@ -25,7 +26,12 @@ from pathlib import Path
 import onnxruntime as ort
 from onnxruntime import InferenceSession
 
-relay_controller = RelayController(relay_port=RELAY_PORT)
+
+# relay_controller = RelayController(relay_port=RELAY_PORT)
+actuator_controller = ActuatorController(
+    base_url="http://192.168.1.18:80/api",
+    on_exception=logger.error(traceback.format_exc()),
+)
 
 
 def load_model(model_path: Path | str) -> InferenceSession:
@@ -33,7 +39,7 @@ def load_model(model_path: Path | str) -> InferenceSession:
 
 
 def on_detected(output: list[OutputRow]):
-    relay_controller.activate()
+    actuator_controller.activate()
 
     total_fire_coverage = 0
     total_fire_instances = 0
@@ -55,11 +61,10 @@ def on_detected(output: list[OutputRow]):
 
 
 def on_not_detected():
-    relay_controller.deactivate()
-    
-    logger.info(
-        f"Alarme desativado."
-    )
+    actuator_controller.deactivate()
+
+    logger.info(f"Alarme desativado.")
+
 
 def init():
     model = load_model(ONNX_MODEL_PATH)
