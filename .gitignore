@@ -15,3 +15,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Runtime storage
+storage/logs/*
+!storage/logs/.gitkeep
+storage/incidents/*
+!storage/incidents/.gitkeep

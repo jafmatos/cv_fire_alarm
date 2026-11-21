@@ -63,96 +63,93 @@ class FrameProcessor:
         self.on_exception = on_exception
 
     def process_image(self, image: np.ndarray) -> list[OutputRow]:
-        try:
-            original_height, original_width = image.shape[0], image.shape[1]
+        original_height, original_width = image.shape[0], image.shape[1]
 
-            image = cv2.resize(image, (self.image_size, self.image_size))
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image = image.astype(np.float32) / 255
-            image = image.transpose(2, 0, 1)
-            image = np.ascontiguousarray(image)
-            image = np.expand_dims(image, axis=0)
+        image = cv2.resize(image, (self.image_size, self.image_size))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = image.astype(np.float32) / 255
+        image = image.transpose(2, 0, 1)
+        image = np.ascontiguousarray(image)
+        image = np.expand_dims(image, axis=0)
 
-            output0, output1 = self.session.run(
-                [self.session_out_name_0, self.session_out_name_1],
-                {self.session_in_name: image},
-            )
+        output0, output1 = self.session.run(
+            [self.session_out_name_0, self.session_out_name_1],
+            {self.session_in_name: image},
+        )
 
-            output0: np.ndarray = output0.squeeze()
-            output0 = output0.transpose()
+        output0: np.ndarray = output0.squeeze()
+        output0 = output0.transpose()
 
-            class_logits_start = 4
-            class_logits_end = class_logits_start + self.num_classes
+        class_logits_start = 4
+        class_logits_end = class_logits_start + self.num_classes
 
-            confidences = output0[:, class_logits_start:class_logits_end]
+        confidences = output0[:, class_logits_start:class_logits_end]
 
-            max_confidences = confidences.max(axis=1)
-            min_confidence_mask = max_confidences >= self.min_confidence
-            valid_confidences = max_confidences[min_confidence_mask]
-            class_indexes = confidences[min_confidence_mask].argmax(axis=1)
+        max_confidences = confidences.max(axis=1)
+        min_confidence_mask = max_confidences >= self.min_confidence
+        valid_confidences = max_confidences[min_confidence_mask]
+        class_indexes = confidences[min_confidence_mask].argmax(axis=1)
 
-            boxes = output0[:, :4]
-            valid_boxes = boxes[min_confidence_mask]
+        boxes = output0[:, :4]
+        valid_boxes = boxes[min_confidence_mask]
 
-            x_center_scaled = (
-                valid_boxes[:, 0] * (original_width / self.image_size)
-            ).astype(int)
-            y_center_scaled = (
-                valid_boxes[:, 1] * (original_height / self.image_size)
-            ).astype(int)
-            w_scaled = (valid_boxes[:, 2] * (original_width / self.image_size)).astype(
-                int
-            )
-            h_scaled = (valid_boxes[:, 3] * (original_height / self.image_size)).astype(
-                int
-            )
-            x_scaled = (x_center_scaled - w_scaled / 2).astype(int)
-            y_scaled = (y_center_scaled - h_scaled / 2).astype(int)
-            boxes_scaled = np.column_stack([x_scaled, y_scaled, w_scaled, h_scaled])
+        x_center_scaled = (
+            valid_boxes[:, 0] * (original_width / self.image_size)
+        ).astype(int)
+        y_center_scaled = (
+            valid_boxes[:, 1] * (original_height / self.image_size)
+        ).astype(int)
+        w_scaled = (valid_boxes[:, 2] * (original_width / self.image_size)).astype(
+            int
+        )
+        h_scaled = (valid_boxes[:, 3] * (original_height / self.image_size)).astype(
+            int
+        )
+        x_scaled = (x_center_scaled - w_scaled / 2).astype(int)
+        y_scaled = (y_center_scaled - h_scaled / 2).astype(int)
+        boxes_scaled = np.column_stack([x_scaled, y_scaled, w_scaled, h_scaled])
 
-            best_box_indexes = cv2.dnn.NMSBoxes(
-                bboxes=boxes_scaled,
-                scores=valid_confidences,
-                score_threshold=self.min_confidence,
-                nms_threshold=self.min_iou,
-            )
+        best_box_indexes = cv2.dnn.NMSBoxes(
+            bboxes=boxes_scaled,
+            scores=valid_confidences,
+            score_threshold=self.min_confidence,
+            nms_threshold=self.min_iou,
+        )
 
-            mask_coeficients = output0[:, class_logits_end:]
-            valid_coeficients = mask_coeficients[min_confidence_mask]
+        mask_coeficients = output0[:, class_logits_end:]
+        valid_coeficients = mask_coeficients[min_confidence_mask]
 
-            valid_masks = np.sum(
-                np.multiply(np.expand_dims(valid_coeficients, axis=(2, 3)), output1),
-                axis=1,
-            )
+        valid_masks = np.sum(
+            np.multiply(np.expand_dims(valid_coeficients, axis=(2, 3)), output1),
+            axis=1,
+        )
 
-            detections: list[OutputRow] = []
+        detections: list[OutputRow] = []
 
-            for index, best_box_index in enumerate(best_box_indexes):
-                x, y, w, h = boxes_scaled[best_box_index]
-                box_crop = np.zeros((original_height, original_width)).astype(bool)
-                box_crop[y : y + h, x : x + w] = True
+        for index, best_box_index in enumerate(best_box_indexes):
+            x, y, w, h = boxes_scaled[best_box_index]
+            box_crop = np.zeros((original_height, original_width)).astype(bool)
+            box_crop[y : y + h, x : x + w] = True
 
-                mask = valid_masks[best_box_index]
-                mask_scaled = cv2.resize(mask, (original_width, original_height))
-                mask_normalized = 1 / (1 + np.exp(-mask_scaled))
+            mask = valid_masks[best_box_index]
+            mask_scaled = cv2.resize(mask, (original_width, original_height))
+            mask_normalized = 1 / (1 + np.exp(-mask_scaled))
 
-                mask_cropped = box_crop & (mask_normalized >= self.min_confidence)
+            mask_cropped = box_crop & (mask_normalized >= self.min_confidence)
 
-                total_pixels = original_height * original_width
-                total_pixels_mask = np.count_nonzero(mask_cropped)
-                mask_coverage = total_pixels_mask / total_pixels
+            total_pixels = original_height * original_width
+            total_pixels_mask = np.count_nonzero(mask_cropped)
+            mask_coverage = total_pixels_mask / total_pixels
 
-                detections.append(
-                    OutputRow(
-                        class_name=self.class_names[class_indexes[best_box_index]],
-                        class_index=class_indexes[best_box_index],
-                        confidence=valid_confidences[best_box_index],
-                        box=boxes_scaled[best_box_index],
-                        mask=mask_cropped,
-                        mask_coverage=mask_coverage,
-                    )
+            detections.append(
+                OutputRow(
+                    class_name=self.class_names[class_indexes[best_box_index]],
+                    class_index=class_indexes[best_box_index],
+                    confidence=valid_confidences[best_box_index],
+                    box=boxes_scaled[best_box_index],
+                    mask=mask_cropped,
+                    mask_coverage=mask_coverage,
                 )
+            )
 
-            return detections
-        except Exception as exception:
-            self.on_exception(exception)
+        return detections

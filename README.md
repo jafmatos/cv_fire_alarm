@@ -16,14 +16,15 @@ Nesses ecossistemas, o fogo não faz parte da operação normal: qualquer foco i
 
 A proteção contra incêndios florestais e agrícolas enfrenta desafios físicos severos. Abaixo, compara-se a abordagem do Sentinela com as principais alternativas convencionais de mercado:
 
-| Tecnologia | Ambiente Ideal | Latência de Detecção | Custo de Implantação | Principais Limitações |
-| :--- | :--- | :--- | :--- | :--- |
-| **Detectores de Fumaça Convencionais** (Ópticos / Iônicos) | Ambientes internos e fechados | Segundos a minutos (após acúmulo de partículas) | Muito baixo | **Inviáveis em áreas abertas.** A dispersão pelo vento impede que partículas de fumaça atinjam o sensor físico em concentrações suficientes. |
-| **Câmeras Térmicas / Infravermelho (FLIR)** | Áreas abertas e industriais | Quase instantâneo (segundos) | Extremamente alto (milhares de dólares por nó) | Custo proibitivo para cobertura em larga escala; exigem calibração térmica periódica; sensíveis a superfícies metálicas aquecidas pelo sol. |
-| **Sensoriamento Remoto por Satélite** (INPE, MODIS, FIRMS, GOES) | Macro monitoramento regional e continental | Horas a dias (depende da órbita) | Baixo para o usuário final (dados públicos) | Resolução espacial grosseira (dezenas a centenas de metros por pixel); detectam o incêndio apenas quando já tomou proporções desastrosas; atraso inviabiliza contenção imediata. |
-| **Sentinela** (Visão Computacional na Borda + Módulos de Câmera) | **Áreas abertas com linha de visão direta** | **Instantâneo (1 a 3 segundos de confirmação)** | **Variável** (diretamente atrelado à qualidade das câmeras adotadas) | Depende de campo de visão desobstruído. A eficácia, o alcance e a nitidez dependem diretamente da qualidade do conjunto óptico adotado. |
+| Tecnologia                                                                | Ambiente Ideal                                      | Latência de Detecção                                  | Custo de Implantação                                                        | Principais Limitações                                                                                                                                                                  |
+| :------------------------------------------------------------------------ | :-------------------------------------------------- | :------------------------------------------------------- | :---------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Detectores de Fumaça Convencionais** (Ópticos / Iônicos)       | Ambientes internos e fechados                       | Segundos a minutos (após acúmulo de partículas)       | Muito baixo                                                                   | **Inviáveis em áreas abertas.** A dispersão pelo vento impede que partículas de fumaça atinjam o sensor físico em concentrações suficientes.                               |
+| **Câmeras Térmicas / Infravermelho (FLIR)**                       | Áreas abertas e industriais                        | Quase instantâneo (segundos)                            | Extremamente alto (milhares de dólares por nó)                              | Custo proibitivo para cobertura em larga escala; exigem calibração térmica periódica; sensíveis a superfícies metálicas aquecidas pelo sol.                                       |
+| **Sensoriamento Remoto por Satélite** (INPE, MODIS, FIRMS, GOES)   | Macro monitoramento regional e continental          | Horas a dias (depende da órbita)                        | Baixo para o usuário final (dados públicos)                                 | Resolução espacial grosseira (dezenas a centenas de metros por pixel); detectam o incêndio apenas quando já tomou proporções desastrosas; atraso inviabiliza contenção imediata. |
+| **Sentinela** (Visão Computacional na Borda + Módulos de Câmera) | **Áreas abertas com linha de visão direta** | **Instantâneo (1 a 3 segundos de confirmação)** | **Variável** (diretamente atrelado à qualidade das câmeras adotadas) | Depende de campo de visão desobstruído. A eficácia, o alcance e a nitidez dependem diretamente da qualidade do conjunto óptico adotado.                                              |
 
 ### Considerações Práticas sobre Custo e Limitações:
+
 * **Custo em Função da Qualidade Óptica:** O custo de implantação não deve ser considerado arbitrariamente baixo. Ele depende diretamente da qualidade dos módulos de câmera escolhidos. Câmeras com sensores superiores, maior alcance dinâmico, lentes adequadas e maior resolução elevam o custo por nó, mas aumentam substancialmente a distância útil de monitoramento e a confiabilidade das predições.
 * **Detecção Noturna e Comportamento no Escuro:** Embora a falta de luz ambiente dificulte a percepção visual padrão e a identificação de colunas de fumaça sem iluminação infravermelha auxiliar, o fogo emite luminosidade própria ao queimar, tornando-se um ponto de alto contraste no escuro. A resposta exata do sistema sob escuridão total e o comportamento do ganho automático dos sensores constituem uma hipótese de teste prático prevista no projeto.
 * **Processamento e Atuação Local:** A inteligência não depende de conexão com a nuvem para operar, funcionando em rede local dedicada com acionamento físico imediato.
@@ -52,95 +53,161 @@ A rotulagem por máscaras de segmentação poligonal (em oposição a caixas del
 ├── data.yaml                    # Metadados das classes e caminhos do dataset
 ├── pyproject.toml               # Gerenciamento de dependências via UV (Python 3.12, ROCm, ONNX, OpenCV)
 ├── runs/
-│   └── fire_alarm_v2/           # Resultados e artefatos de treinamento
-│       ├── weights/
-│       │   └── best.onnx        # Modelo exportado e otimizado em formato ONNX
-│       ├── results.png          # Curvas de convergência e métricas (mAP50, mAP50-95)
-│       └── confusion_matrix_normalized.png
-├── pio_cam/
-│   └── fire_alarm_cam/          # Firmware para nó de teste baseado em microcontrolador
-│       ├── platformio.ini       # Configurações de compilação da placa ESP32
-│       └── src/
-│           ├── CameraWebServer.ino # Servidor de vídeo streaming na rede local
-│           └── board_config.h   # Mapeamento de pinos do módulo de câmera
+│   └── fire_alarm_v4/           # Pesos e artefatos de treinamento (4 classes: Fogo, Fumaça, Nuvens, Sol)
+│       └── weights/
+│           └── best.onnx        # Modelo exportado e otimizado em formato ONNX
+├── pio_cam/                     # Firmware do nó de captura de vídeo ESP32-CAM (PlatformIO)
+│   ├── platformio.ini           # Configurações de compilação da placa ESP32
+│   └── src/
+│       ├── CameraWebServer.ino  # Servidor MJPEG streaming na rede local (IP fixo 192.168.1.10)
+│       ├── board_config.h       # Mapeamento de pinos do sensor OV5640
+│       └── secrets.h            # Credenciais de Wi-Fi e rede
+├── pio_siren/                   # Firmware do nó atuador da sirene ESP32 (PlatformIO)
+│   ├── platformio.ini           # Configurações de compilação da placa ESP32
+│   └── src/
+│       ├── WebServer.ino        # Servidor web com endpoints REST para acionamento (/api/activate)
+│       └── secrets.h            # Credenciais de rede e IP fixo (192.168.1.11)
 ├── src/
 │   └── detection/
-│       ├── sentinel.py          # Núcleo de inferência ONNX, lógica de decisão e acionamento
-│       └── infer.py             # Script auxiliar de teste e validação preliminar
-└── guide/                       # Documentação técnica e fundamentos teóricos
+│       ├── sentinel/            # Pacote modular do motor de monitoramento Sentinela
+│       │   ├── main.py          # Ponto de entrada e orquestração do sistema
+│       │   ├── config.py        # Configurações globais, thresholds e constantes de tempo
+│       │   ├── camera_video_capture.py # Ingestão de vídeo multithreaded (Zero-Lag)
+│       │   ├── frame_processor.py # Inferência ONNX, decodificação de máscaras e NMS
+│       │   ├── video_monitoring_engine.py # Loop de monitoramento, rate-limiter e máquina de estados
+│       │   ├── temporal_filter.py # Filtros temporais em deques deslizantes com histerese
+│       │   ├── actuator_controller.py # Cliente HTTP assíncrono para os nós atuadores
+│       │   └── logger.py        # Logger com auto-limpeza diária de logs obsoletos (30 dias)
+│       ├── infer.py             # Script auxiliar de teste e validação preliminar
+│       ├── train.py             # Rotina de treinamento do modelo
+│       └── export.py            # Rotina de exportação para ONNX
+└── storage/                     # Dados persistidos em tempo de execução
+    ├── logs/                    # Arquivos diários de log da aplicação
+    └── incidents/               # Gravações periciais de vídeo dos eventos de fogo
 ```
 
 ---
 
 ## 5. Arquitetura Geral do Sistema
 
-O sistema foi arquitetado de forma agnóstica à câmera: qualquer dispositivo que forneça um fluxo de vídeo contínuo (RTSP ou HTTP) na rede local pode atuar como nó de captura. No ambiente de testes de bancada deste repositório, utilizou-se um módulo microcontrolado com câmera para validação do pipeline:
+O sistema foi arquitetado de forma agnóstica à câmera: qualquer dispositivo que forneça um fluxo de vídeo contínuo (RTSP ou HTTP) na rede local pode atuar como nó de captura. No ambiente de testes de bancada deste repositório, utilizou-se um ecossistema distribuído com nós microcontrolados dedicados (ESP32) comunicando-se via rede local com o servidor de borda:
 
 ```mermaid
 flowchart LR
-    subgraph Captura ["1. Nó de Captura (Campo)"]
-        CAM[Módulo de Câmera / Câmera IP] --> STREAM["Fluxo de Vídeo na Rede Local (RTSP / HTTP)"]
+    subgraph Captura ["1. Nó de Captura (ESP32-CAM + Shield MB)"]
+        CAM["Módulo ESP32-CAM + Shield MB<br>Sensor OV5640 (QVGA 320x240)"] --> STREAM["Servidor MJPEG Stream<br>http://192.168.1.10:81/stream"]
     end
 
-    subgraph Processamento ["2. Nó Sentinela (Servidor / PC Local)"]
-        STREAM --> SENTINEL["sentinel.py"]
-        SENTINEL --> ONNX_CORE["Inferência Otimizada ONNX (YOLOv8-Seg)"]
-        ONNX_CORE --> DECISION{"Motor de Decisão<br>(Filtro Temporal + Cobertura)"}
+    subgraph Processamento ["2. Nó Sentinela (Servidor de Borda Dedicado)"]
+        STREAM --> THREAD_CAP["CameraVideoCapture<br>(Thread Leitora Zero-Lag)"]
+        THREAD_CAP --> RATE_LIMIT["Rate Limiter (5 FPS)"]
+        RATE_LIMIT --> ONNX_CORE["Inferência Otimizada ONNX (YOLOv8-Seg)"]
+        ONNX_CORE --> DECISION{"Motor de Decisão<br>(Degraus Temporais + Histerese)"}
     end
 
-    subgraph Atuacao ["3. Nó Atuador (Alarme)"]
-        DECISION -->|Alarme Confirmado: Requisição de Disparo| ACTUATOR["Dispositivo Atuador / Controlador de Relé"]
-        ACTUATOR --> RELAY["Relé de Potência"]
-        RELAY --> SIREN["Sirene de Alta Intensidade"]
+    subgraph Atuacao ["3. Nó Atuador (Alarme IoT)"]
+        DECISION -->|POST /api/activate| ACT_HTTP["Servidor Web REST ESP32<br>http://192.168.1.11:80"]
+        ACT_HTTP --> RELAY["Módulo Relé Optoacoplado 5V"]
+        RELAY --> SIREN["Sirene Automotiva Industrial 12V<br>(Fonte Dedicada 12V)"]
     end
 ```
 
-### Dinâmica da Operação:
-1. **Nó de Captura:** O módulo de câmera captura o vídeo da área vigiada e disponibiliza a transmissão contínua na rede local.
-2. **Nó Sentinela:** O computador central consome os quadros de vídeo e executa a inferência direta via runtime ONNX sem carregar bibliotecas pesadas de treinamento, garantindo processamento rápido e contínuo.
-3. **Nó Atuador:** Ao consolidar um evento de fogo, o Sentinela envia um comando (via requisição de rede para um nó atuador dedicado ou comando serial) para fechar o circuito de um relé e disparar a sirene física.
+### Dinâmica da Operação e Nós de Hardware:
+
+1. **Nó de Captura (ESP32-CAM):** O módulo de câmera captura o vídeo da área vigiada e disponibiliza a transmissão contínua MJPEG na rede local com endereço IP fixo (`192.168.1.10:81/stream`).
+2. **Nó Sentinela (Servidor de Borda Dedicado):** O computador central consome os quadros através de uma thread leitora desacoplada e executa a inferência direta via runtime ONNX sem carregar bibliotecas pesadas de treinamento, garantindo processamento rápido, frio e contínuo.
+3. **Nó Atuador (ESP32 + Sirene 12V):** Ao consolidar um evento de fogo, o Sentinela despacha uma requisição HTTP REST assíncrona para o nó atuador (`192.168.1.11:80/api/activate`), acionando o relé mecânico isolado que chaveia a sirene física de alta intensidade.
+
+### O Circuito Físico e Montagem de Bancada:
+
+A bancada de testes de desenvolvimento e validação foi montada de forma enxuta e funcional dividida em dois nós físicos:
+
+1. **Nó de Visão (Captura):**
+
+   * **Módulo ESP32-CAM (Ai-Thinker):** Equipado com sensor óptico OV5640 transmitindo fluxo de vídeo contínuo MJPEG em resolução nativa QVGA (320×240).
+   * **Shield ESP32-CAM-MB:** Placa-base acoplada ao módulo contendo interface serial USB-UART (CH340), botão de reset e conector Micro-USB, fornecendo alimentação regulada estável de 5V e dispensando adaptadores FTDI avulsos na bancada.
+2. **Nó de Atuação (Alarme IoT):**
+
+   * **Microcontrolador:** 1x ESP32 NodeMCU executando o servidor REST HTTP assíncrono.
+   * **Módulo Relé:** Relé de 2 canais com acionamento optoacoplado e LED indicador de estado.
+   * **Atuador Sonoro:** Sirene de marcha a ré automotiva (12V).
+   * **Alimentação e Conectividade:** Conector Jack P4 fêmea para entrada de 12V da fonte externa e jumpers para interligação dos sinais lógicos (GPIO) e alimentação.
+
+### Construção Customizada do Servidor de Borda (Mini PC):
+
+O processamento do Sentinela foi dimensionado para executar localmente em hardware acessível, sem dependência de placas de vídeo dedicadas de alto consumo:
+
+* **Gabinete:** **Metalfish S3** em alumínio escovado — dimensões minúsculas de apenas **200 × 105 × 250 mm** (~4,5 litros de volume total), garantindo pegada física mínima na bancada ou em campo.
+* **Processador:** Intel Core i7-3770 (4 núcleos / 8 threads @ 3.4 GHz)
+* **Memória:** 16 GB DDR3 Dual-Channel
+* **Placa-Mãe:** Bluecase BMBH61-D (Chipset Intel H61)
+* **Gestão Térmica:** Substituição do cooler padrão pelo air cooler **Metalfish DH380**. Em teste contínuo de estresse a 100% de CPU por 20 minutos, a temperatura máxima caiu de **95°C para 83°C–84°C estáveis**.
+* **Deploy e Confiabilidade:** Planejado para execução conteinerizada em **Docker** (`docker compose` com flag `--restart unless-stopped`), garantindo inicialização automática como serviço (*headless*) caso o sistema reinicie após falta de energia.
 
 ---
 
 ## 6. Lógica de Decisão do Sentinela
 
-Para evitar o acionamento indevido de sirenes em locais isolados, o Sentinela aplica um conjunto estrito de regras determinísticas antes de validar uma ocorrência:
+Para evitar o acionamento indevido de sirenes em locais isolados e garantir resposta proporcional à intensidade do fogo, o Sentinela aplica um conjunto estrito de regras determinísticas com concorrência e histerese:
 
 ```mermaid
 flowchart TD
-    FRAME[Quadro de Entrada Recebido] --> INFER[Inferência ONNX: BBoxes + Coeficientes + Protótipos]
-    INFER --> NMS[Filtragem NMS: cv2.dnn.NMSBoxes]
-    NMS --> MASK[Geração das Máscaras Poligonais por Multiplicação Matricial]
-    
-    MASK --> COV_CHECK{"Área da Chama >= Limiar Mínimo?<br>(mask_coverage >= 0.5%)"}
-    COV_CHECK -- Não --> REJECT_FRAME["Descarte: Foco insignificante ou ruído óptico"]
-    
-    COV_CHECK -- Sim --> DEQUE["Inserir Positivo no Deque Temporal<br>(Buffer deslizante de 60 frames)"]
-    REJECT_FRAME --> DEQUE_NEG["Inserir Negativo no Deque Temporal"]
-    
-    DEQUE & DEQUE_NEG --> FULL_CHECK{"Deque Completou 60 Frames?"}
-    FULL_CHECK -- Não --> NEXT[Aguardar Próximos Quadros]
-    
-    FULL_CHECK -- Sim --> CONSISTENCY{"Consistência Temporal >= 50%?<br>(Ao menos 30 de 60 frames positivos)"}
-    CONSISTENCY -- Não --> NO_ALARM[Manter Alarme em Repouso]
-    CONSISTENCY -- Sim --> ALARM_STATE{"Status Atual do Alarme"}
-    
-    ALARM_STATE -- Estava Desligado --> TRIGGER_ON["ATIVAR RELÉ / LIGAR SIRENE"]
-    ALARM_STATE -- Já Estava Ligado --> MAINTAIN[Manter Sirene Ativa]
+    FRAME[Quadro Capturado pela Câmera] --> ZERO_LAG["CameraVideoCapture<br>(Ingestão Multithreaded Zero-Lag)"]
+    ZERO_LAG --> RATE["Rate Limiter (Cravado em 5 FPS / 200ms)"]
+    RATE --> INFER["Inferência ONNX YOLOv8s-seg (4 Classes)"]
+    INFER --> NMS["Filtragem NMS: cv2.dnn.NMSBoxes"]
+    NMS --> MASK["Decodificação das Máscaras Poligonais"]
+  
+    MASK --> COV_CHECK{"Área da Chama >= Limiar Mínimo?<br>(mask_coverage >= 0.1%)"}
+    COV_CHECK -- Não --> APPEND_NEG["Inserir Negativo (False) nos Deques"]
+    COV_CHECK -- Sim --> APPEND_POS["Inserir Positivo (True) nos Deques"]
+  
+    subgraph DEGRAUS ["Degraus Temporais de Ativação"]
+        L1["Nível 1: Janela 4s (20 frames) | Threshold >= 50% (2s de fogo)"]
+        L2["Nível 2: Janela 16s (80 frames) | Threshold >= 25% (4s de fogo)"]
+        L3["Nível 3: Janela 64s (320 frames) | Threshold >= 12.5% (8s de fogo)"]
+    end
+  
+    APPEND_POS & APPEND_NEG --> L1 & L2 & L3
+  
+    L1 & L2 & L3 --> TRIGGER_CHECK{"Algum Degrau Cheio e Validado?"}
+    TRIGGER_CHECK -- Sim --> STATE_ACTIVE{"Alarme Já Estava Ativo?"}
+    STATE_ACTIVE -- Não --> TURN_ON["ATIVAR ALARME<br>Dispara POST /api/activate<br>Limpa Apenas Deque de Desativação"]
+    STATE_ACTIVE -- Sim --> MAINTAIN["Manter Sirene Ligada"]
+  
+    TRIGGER_CHECK -- Não --> DEACT_CHECK{"Deque de Desativação:<br>Janela de 8s Cheia e Fogo < 12.5%?"}
+    DEACT_CHECK -- Sim --> STATE_OFF{"Alarme Já Estava Desligado?"}
+    STATE_OFF -- Não --> TURN_OFF["DESLIGAR ALARME<br>Dispara POST /api/deactivate<br>Limpa Apenas Deques de Ativação"]
+    STATE_OFF -- Sim --> NO_ALARM["Manter Alarme em Repouso"]
+    DEACT_CHECK -- Não --> NO_ALARM
 ```
 
 ### Detalhamento das Regras de Engenharia:
 
-1. **Validação de Área de Cobertura (`TARGET_MINIMUM_COVERAGE = 0.005`):**
+1. **Ingestão Zero-Lag e Limitador de Cadência (`MAX_PROCESSED_FPS = 5`):**
+
+   * **Buffer Unitário:** A classe `CameraVideoCapture` isola a recepção de pacotes de rede em uma thread secundária. A thread principal lê apenas a referência mais recente (`latest_frame`), descartando frames antigos sem decodificá-los, eliminando qualquer atraso cumulativo no OpenCV.
+   * **Cadência Cravada:** Utilizando `time.perf_counter()`, o motor de inferência mantém o ciclo estritamente em **200 ms por quadro (5.0 FPS)**, deixando a CPU do servidor de borda operando fria com carga mínima.
+2. **Validação de Área de Cobertura (`TARGET_MINIMUM_COVERAGE = 0.001`):**
+
    * Em vez de confiar apenas na pontuação de probabilidade (*confidence score*), o algoritmo avalia a razão de píxeis ativos da máscara em relação ao total da tela:
-     $$\text{mask\_coverage} = \frac{\sum \text{píxeis da máscara}}{\text{largura} \times \text{altura}}$$
-   * Se a cobertura for inferior a 0,5% do enquadramento, o quadro é ignorado. Isso elimina disparos decorrentes de pequenas faíscas distantes, reflexos momentâneos de luz solar em folhas ou insetos voando próximos à lente.
+     $$
+     \text{mask\_coverage} = \frac{\sum \text{píxeis da máscara}}{\text{largura} \times \text{altura}}
+     $$
+   * Se a cobertura for inferior a 0,1% do enquadramento, o quadro é ignorado. Isso elimina disparos decorrentes de pequenas faíscas distantes, reflexos momentâneos de luz solar em folhas ou insetos voando próximos à lente.
+3. **Filtros Temporais em Degraus de Exposição:**
 
-2. **Consistência Temporal via Buffer Deslizante (`TemporalFilter`):**
-   * Chamas e fumaças reais são fenômenos persistentes no tempo. Perturbações ópticas, por outro lado, duram poucos milissegundos.
-   * Utiliza-se um `collections.deque(maxlen=60)`. Para o alarme armar, ao menos **50% dos últimos 60 quadros analisados** devem satisfazer os critérios de detecção e área simultaneamente.
+   * O fogo em campo aberto pode surgir como uma labareda repentina e forte ou como um foco incipiente intermitente fustigado pelo vento. Para responder adequadamente a ambos os cenários, o Sentinela utiliza múltiplos deques simultâneos em potências de tempo:
+     * **Nível 1 (Chama violenta/alta exposição):** Janela de 4 segundos (20 frames). Exige 50% de presença (ao menos **2 segundos** com fogo).
+     * **Nível 2 (Chama moderada):** Janela de 16 segundos (80 frames). Exige 25% de presença (ao menos **4 segundos** acumulados com fogo).
+     * **Nível 3 (Chama intermitente/distante):** Janela de 64 segundos (320 frames). Exige 12.5% de presença (ao menos **8 segundos** dispersos na janela).
+   * A validação de qualquer um dos níveis é suficiente para armar o sistema.
+4. **Lógica de Desativação Desacoplada e Histerese Assimétrica:**
 
-3. **Decisão de Projeto: Supressão do Cálculo de Taxa de Crescimento:**
+   * **Desacoplamento:** O desarme do alarme **não compartilha os deques de ativação**. Ele possui um deque próprio de desativação configurado para **8 segundos** (40 frames) com limiar $< 12.5\%$ de fogo residual.
+   * **Prevenção de Repique (*Anti-Flapping*):** Ao transicionar de estado (de inativo para ativo, ou vice-versa), o motor limpa **apenas os filtros do tipo oposto**. Isso impede que o alarme fique oscilando (ligando e desligando rapidamente) se a chama estiver na borda de detecção.
+5. **Decisão de Projeto: Supressão do Cálculo de Taxa de Crescimento:**
+
    * Em cenários industriais fechados (como caldeiras ou cozinhas), é comum medir a velocidade de expansão do fogo para determinar se a chama está fora de controle antes de agir.
    * **Em áreas externas abertas (florestas e plantações), essa métrica foi propositalmente omitida.** Em reservas ambientais ou áreas agrícolas, a política é de **tolerância zero**: a presença confirmada de fogo, independentemente de estar crescendo ou estável, já é uma anomalia severa que exige intervenção imediata. Esperar o fogo crescer para confirmar o alerta aumentaria desnecessariamente o tempo de resposta e o risco de devastação.
 
@@ -149,6 +216,7 @@ flowchart TD
 ## 7. Demonstrações e Resultados Visuais
 
 ### Segmentação de Instâncias nos Dados de Validação
+
 Visualização das predições do modelo com a sobreposição precisa das máscaras de píxeis para fogo e fumaça:
 
 <div align="center">
@@ -159,28 +227,38 @@ Visualização das predições do modelo com a sobreposição precisa das másca
 ### Desempenho e Métricas de Treinamento
 
 | Curvas de Perda e Convergência (mAP50 / mAP50-95) | Matriz de Confusão Normalizada |
-| :---: | :---: |
-| <img src="runs/fire_alarm_v2/results.png" alt="Curvas de Treino e Validação" width="450px" /> | <img src="runs/fire_alarm_v2/confusion_matrix_normalized.png" alt="Matriz de Confusão" width="450px" /> |
+| :------------------------------------------------: | :-----------------------------: |
+|                                                    |                                |
 
 ---
 
 ### Demonstrações em Vídeo
 
-#### Demonstração Preliminar de Bancada (Sistema Conectado ao Computador)
-> **Vídeo de Bancada:** Espaço reservado para o teste preliminar do sistema integrado, exibindo a recepção da transmissão de vídeo na rede local, o processamento em tempo real pelo script `sentinel.py` e o chaveamento mecânico do relé de bancada conectado ao computador pessoal.
->
-> *(Inserir vídeo/GIF da tela de monitoramento e do acionamento do relé)*
+#### Validação Integrada do Sistema (Detecção, Rede e Acionamento)
 
-#### Teste Controlado em Campo (Atuação Real com Fogo e Sirene)
-> **Vídeo de Campo:** Espaço reservado para o teste prático de validação externa, com ignição de fogo controlado no quintal/campo (inclusive sob condições de baixa luminosidade para avaliar a autoemissão de luz da chama) e verificação do acionamento sonoro da sirene de alta intensidade.
->
-> *(Inserir vídeo da demonstração externa)*
+Demonstração do Sentinela em execução contínua: recepção da transmissão de vídeo do nó de câmera ESP32-CAM via rede local, processamento com decodificação de máscaras e inferência ONNX em tempo real, validação do degrau temporal, envio do comando REST de ativação para o nó da sirene e desligamento seguro com histerese:
+
+<div align="center">
+  <video src="demo.mp4" width="420px" controls></video>
+  <p>
+    <a href="demo.mp4">▶️ <strong>Assistir ao vídeo da demonstração (demo.mp4)</strong></a>
+  </p>
+  <p><em>Vídeo 1: Demonstração prática do pipeline completo do Sentinela em funcionamento.</em></p>
+</div>
+
+##### Interpretação Prática da Demonstração:
+
+* **Cadência Cravada em 5 FPS (`MAX_PROCESSED_FPS = 5`):** Nota-se na atualização dos quadros e nos registros de console que o motor opera deliberadamente a **5 quadros por segundo (ciclo exato de 200 ms)**. Em monitoramento de incêndios em áreas abertas, processar vídeo a 30 ou 60 FPS representaria um desperdício desnecessário de processamento e calor. A cadência de 5 FPS garante 5 amostragens visuais por segundo — margem temporal abundante para acompanhar a evolução física da chama — mantendo a CPU do mini PC operando fria e com folga térmica contínua.
+* **Sinalização Visual da Ativação (LED do Relé):** A validação foi gravada às 03:00 da madrugada em ambiente residencial. Por motivos óbvios de tranquilidade pública, a sirene automotiva de ré foi mantida fisicamente desligada da alimentação; a confirmação instantânea do disparo físico pode ser acompanhada pelo **LED indicador de estado acoplado ao módulo relé de 2 canais**, que acende no momento exato em que a requisição de acionamento é recebida.
+* **Detecção Rápida nos Primeiros Segundos:** O fogo é detectado logo no início da cena porque atinge os parâmetros do **primeiro degrau temporal de ativação (Nível 1: janela de 4 segundos com threshold de 50%)**, confirmando com precisão a persistência da chama sem falsos disparos.
+* **Desativação Retardada com Histerese:** Quando a chama cessa, nota-se que o relé não desliga imediatamente. Esse comportamento é proposital e decorre da **regra de desativação desacoplada**, que exige que a janela móvel de **8 segundos registre menos de 12.5% de presença de fogo** para considerar o evento totalmente extinto, prevenindo oscilações bruscas (*alarm flapping*).
 
 ---
 
 ## 8. Como Executar
 
 ### 1. Instalação do Ambiente
+
 Recomenda-se o uso do gerenciador de pacotes [`uv`](https://docs.astral.sh/uv/):
 
 ```bash
@@ -192,14 +270,17 @@ uv sync
 ```
 
 ### 2. Configuração de Parâmetros
-No arquivo [`src/detection/sentinel.py`](src/detection/sentinel.py), configure o endpoint de vídeo e a interface de acionamento do relé:
+
+No arquivo [`src/detection/sentinel/config.py`](src/detection/sentinel/config.py), configure os endereços IP dos nós ESP32 e parâmetros do motor:
 
 ```python
-VIDEO_SOURCE = "http://192.168.1.26:81/stream"  # Endpoint de vídeo na rede (ou 0 para webcam local)
-RELAY_PORT = "/dev/ttyUSB1"                     # Interface de comunicação com o atuador
+VIDEO_STREAM_IP = "192.168.1.10"                # IP estático do nó de câmera ESP32-CAM
+SIREN_IP = "192.168.1.11"                       # IP estático do nó atuador da sirene
+MAX_PROCESSED_FPS = 5                           # Cadência do rate limiter em FPS
 ```
 
 ### 3. Inicialização do Monitoramento
+
 ```bash
-uv run python src/detection/sentinel.py
+uv run python src/detection/sentinel/main.py
 ```

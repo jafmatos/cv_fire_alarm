@@ -9,7 +9,7 @@ from detection.sentinel.temporal_filter import TemporalFilter
 from detection.sentinel.frame_processor import FrameProcessor, OutputRow
 from detection.sentinel.config import (
     VIDEO_SOURCE,
-    IMAGE_SIZE,
+    PREPROCESSING_FRAME_SIZE,
     TARGET_MINIMUM_COVERAGE,
     DETECT_DEQUE_MAX_LENGTH_LEVEL_1,
     DETECT_DEQUE_THRESHOLD_LEVEL_1,
@@ -77,7 +77,7 @@ def init():
 
     frame_processor = FrameProcessor(
         session=model,
-        image_size=IMAGE_SIZE,
+        image_size=PREPROCESSING_FRAME_SIZE,
         min_confidence=MINIMUM_CONFIDENCE,
         min_iou=MINIMUM_IOU,
         class_names=CLASS_NAMES,
