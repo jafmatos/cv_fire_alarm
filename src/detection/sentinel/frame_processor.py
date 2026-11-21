@@ -1,3 +1,4 @@
+import time
 import cv2
 from collections.abc import Callable
 from onnxruntime import InferenceSession
@@ -38,6 +39,7 @@ class FrameProcessor:
     min_confidence: float
     min_iou: float
     class_names: list[str]
+    num_classes: int
     on_exception: Callable[[Exception], None]
 
     def __init__(
@@ -57,6 +59,7 @@ class FrameProcessor:
         self.min_confidence = min_confidence
         self.min_iou = min_iou
         self.class_names = class_names
+        self.num_classes = len(class_names)
         self.on_exception = on_exception
 
     def process_image(self, image: np.ndarray) -> list[OutputRow]:
@@ -78,7 +81,11 @@ class FrameProcessor:
             output0: np.ndarray = output0.squeeze()
             output0 = output0.transpose()
 
-            confidences = output0[:, 4:6]
+            class_logits_start = 4
+            class_logits_end = class_logits_start + self.num_classes
+
+            confidences = output0[:, class_logits_start:class_logits_end]
+
             max_confidences = confidences.max(axis=1)
             min_confidence_mask = max_confidences >= self.min_confidence
             valid_confidences = max_confidences[min_confidence_mask]
@@ -110,7 +117,7 @@ class FrameProcessor:
                 nms_threshold=self.min_iou,
             )
 
-            mask_coeficients = output0[:, 6:]
+            mask_coeficients = output0[:, class_logits_end:]
             valid_coeficients = mask_coeficients[min_confidence_mask]
 
             valid_masks = np.sum(

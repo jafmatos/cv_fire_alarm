@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "WiFiType.h"
 #include "esp_camera.h"
 #include <WiFi.h>
 
@@ -6,12 +7,8 @@
 // Select camera model in board_config.h
 // ===========================
 #include "board_config.h"
+#include "secrets.h"
 
-// ===========================
-// Enter your WiFi credentials
-// ===========================
-const char *ssid = "DTEL_2.4G_MATOS";
-const char *password = "Ribamar23";
 
 void startCameraServer();
 void setupLedFlash();
@@ -106,8 +103,15 @@ void setup() {
 #if defined(LED_GPIO_NUM)
   setupLedFlash();
 #endif
+  WiFi.mode(WIFI_STA);
+  WiFi.config(LOCAL_IP, GATEWAY, SUBNET, PRIMARY_DNS);
 
-  WiFi.begin(ssid, password);
+  if (strlen(WIFI_SSID) == 0) {
+    WiFi.begin();
+  } else {
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  }
+  
   WiFi.setSleep(false);
 
   Serial.print("WiFi connecting");

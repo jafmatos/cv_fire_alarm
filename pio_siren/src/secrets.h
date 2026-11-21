@@ -1,13 +1,12 @@
-// Secrets for your local home network
+#pragma once
+#include <Arduino.h>
 
-// This is a "hard way" to configure your local WiFi network name and passphrase
-// into the source code and the uploaded sketch.
-//
-// Using the WiFi Manager is preferred and avoids reprogramming when your network changes.
-// See https://homeding.github.io/#page=/wifimanager.md
+#define WIFI_SSID            "DTEL_2.4G_MATOS"
+#define WIFI_PASSWORD        "Ribamar23"
 
-// ssid and passPhrase can be used when compiling for a specific environment as a 2. option.
+#define IP_ADDRESS(a, b, c, d) IPAddress(a, b, c, d)
 
-// add you wifi network name and PassPhrase or use WiFi Manager
-const char *ssid = "DTEL_2.4G_MATOS";
-const char *passPhrase = "Ribamar23";
+#define LOCAL_IP         IP_ADDRESS(192, 168, 1, 11)
+#define GATEWAY          IP_ADDRESS(192, 168, 1, 1)
+#define SUBNET           IP_ADDRESS(255, 255, 255, 0)
+#define PRIMARY_DNS      IP_ADDRESS(192, 168, 1, 1)

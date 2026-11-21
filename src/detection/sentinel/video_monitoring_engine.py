@@ -1,3 +1,6 @@
+from typing import Any
+from detection.sentinel.camera_video_capture import CameraVideoCapture
+from detection.sentinel import camera_video_capture
 import time
 import cv2
 from collections.abc import Callable
@@ -6,68 +9,71 @@ from detection.sentinel.frame_processor import FrameProcessor, OutputRow
 from detection.sentinel.logger import logger
 
 
-class CameraSignalLostError(RuntimeError):
-    def __init__(self):
-        super().__init__("Sinal da câmera perdido.")
-
-
 class VideoMonitoringEngine:
+    video_source: CameraVideoCapture
+    max_processed_fps: int
+    max_process_time_per_frame_seconds: int
     frame_processor: FrameProcessor
     target_class_index: int
     target_minimum_coverage: float
-    temporal_filter: TemporalFilter
+    temporal_filters: list[TemporalFilter]
     on_detected: Callable[[list[OutputRow]], None]
     on_not_detected: Callable[[], None]
     on_exception: Callable[[Exception], None]
 
     def __init__(
         self,
+        video_source: Any,
+        max_processed_fps: int,
         frame_processor: FrameProcessor,
         target_class_index: int,
         target_minimum_coverage: float,
-        temporal_filter: TemporalFilter,
+        temporal_filters: list[TemporalFilter],
         on_detected: Callable[[list[OutputRow]], None],
         on_not_detected: Callable[[], None],
         on_exception: Callable[[Exception], None],
     ):
+        self.video_source = video_source
+        self.max_processed_fps = max_processed_fps
+        self.max_process_time_per_frame_seconds = 1 / max_processed_fps
         self.frame_processor = frame_processor
         self.target_class_index = target_class_index
         self.target_minimum_coverage = target_minimum_coverage
-        self.temporal_filter = temporal_filter
+        self.temporal_filters = temporal_filters
         self.on_detected = on_detected
         self.on_not_detected = on_not_detected
         self.on_exception = on_exception
 
     def monitor(
         self,
-        video_source,
         show=False,
         retry_count: int = -1,
         retry_interval_seconds: int = 0,
     ):
         retries = 0
+        camera_video_capture: CameraVideoCapture | None = None
 
         while True:
-            if retries > retry_count and retry_count >= 0:
-                logger.warn(f"Número máximo de tentativas atingido. Interrompendo o monitoramento.")
-                
-                break
-
-            elif retries > 0:
-                logger.info(f"Tentativa n° {retries}")
-
-            is_object_detected_current_value: bool = False
-            video_capture = cv2.VideoCapture(video_source)
-
             try:
-                if not video_capture.isOpened():
-                    raise CameraSignalLostError()
+                camera_video_capture = CameraVideoCapture(
+                    video_source=self.video_source
+                )
 
-                while video_capture.isOpened():
-                    success, frame = video_capture.read()
+                if retries > retry_count and retry_count >= 0:
+                    logger.warn(
+                        f"Número máximo de tentativas atingido. Interrompendo o monitoramento."
+                    )
 
-                    if not success:
-                        raise CameraSignalLostError()
+                    break
+
+                elif retries > 0:
+                    logger.info(f"Tentativa n° {retries}")
+
+                is_object_detected_current_value: bool = False
+
+                while camera_video_capture.is_connected:
+                    process_time_start = time.perf_counter()
+                    frame = camera_video_capture.read_latest()
 
                     output = self.frame_processor.process_image(frame)
 
@@ -121,14 +127,20 @@ class VideoMonitoringEngine:
                         total_target_object_coverage >= self.target_minimum_coverage
                     )
 
-                    self.temporal_filter.append(
-                        is_object_in_frame and object_has_minimum_coverage
+                    for temporal_filter in self.temporal_filters:
+                        temporal_filter.append(
+                            is_object_in_frame and object_has_minimum_coverage
+                        )
+
+                    is_object_consistently_detected = any(
+                        tf.type == "detect" and tf.is_full and tf.validate()
+                        for tf in self.temporal_filters
                     )
 
-                    if not self.temporal_filter.is_full:
-                        continue
-
-                    is_object_consistently_detected = self.temporal_filter.validate()
+                    is_object_consistently_undetected = any(
+                        tf.type == "undetect" and tf.is_full and tf.validate()
+                        for tf in self.temporal_filters
+                    )
 
                     if (
                         not is_object_detected_current_value
@@ -136,22 +148,42 @@ class VideoMonitoringEngine:
                     ):
                         is_object_detected_current_value = True
 
-                        self.temporal_filter.clear()
+                        for tf in self.temporal_filters:
+                            if tf.type == "detect":
+                                continue
+
+                            tf.clear()
+
                         self.on_detected(output)
                     elif (
                         is_object_detected_current_value
-                        and not is_object_consistently_detected
+                        and is_object_consistently_undetected
                     ):
                         is_object_detected_current_value = False
 
-                        self.temporal_filter.clear()
+                        for tf in self.temporal_filters:
+                            if tf.type == "undetect":
+                                continue
+
+                            tf.clear()
+
                         self.on_not_detected()
+
+                    process_time_end = time.perf_counter()
+                    total_process_time_seconds = process_time_end - process_time_start
+                    exceeding_time_seconds = (
+                        self.max_process_time_per_frame_seconds
+                        - total_process_time_seconds
+                    )
+
+                    if exceeding_time_seconds > 0:
+                        time.sleep(exceeding_time_seconds)
 
             except Exception as exception:
                 self.on_exception(exception)
 
             finally:
-                video_capture.release()
+                camera_video_capture and camera_video_capture.release()
                 cv2.destroyAllWindows()
 
                 if retries < retry_count or retry_count < 0:

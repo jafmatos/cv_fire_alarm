@@ -4,18 +4,25 @@ import requests
 
 
 class ActuatorController:
-    base_url: str
+    actuator_activate_url: str
+    actuator_deactivate_url: str
     on_exception: Callable[[Exception], None]
 
 
-    def __init__(self, base_url: str, on_exception: Callable[[Exception], None]):
-        self.base_url = base_url
+    def __init__(
+        self,
+        actuator_activate_url: str,
+        actuator_deactivate_url: str,
+        on_exception: Callable[[Exception], None],
+    ):
+        self.actuator_activate_url = actuator_activate_url
+        self.actuator_deactivate_url = actuator_deactivate_url
         self.on_exception = on_exception
 
 
     def activate(self):
         try:
-            requests.get(f"{self.base_url}/activate")
+            requests.get(self.actuator_activate_url)
 
             logger.info("Pedido de ativação enviado com sucesso")
         except Exception as exception:
@@ -24,7 +31,7 @@ class ActuatorController:
 
     def deactivate(self):
         try:
-            requests.get(f"{self.base_url}/deactivate")
+            requests.get(self.actuator_deactivate_url)
 
             logger.info("Pedido de desativação enviado com sucesso")
         except Exception as exception:

@@ -23,11 +23,12 @@ void deactivateRelay(void) { digitalWrite(RELAY_PORT, RELAY_OFF); }
 
 void connectWifi() {
   WiFi.mode(WIFI_STA);
+  WiFi.config(LOCAL_IP, GATEWAY, SUBNET, PRIMARY_DNS);
 
-  if (strlen(ssid) == 0) {
+  if (strlen(WIFI_SSID) == 0) {
     WiFi.begin();
   } else {
-    WiFi.begin(ssid, passPhrase);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
 
   TRACE("Connecting to WiFi...\n");
